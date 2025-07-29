@@ -1,0 +1,30 @@
+{
+  "dxt_version": "0.1",
+  "name": "bon-calculadora",
+  "version": "1.0.0",
+  "description": "BON Calculadora para ayudar a LLM",
+  "author": {
+    "name": "Carlos Vicens",
+    "email": "cvicensa@redhat.com"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "build/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/build/index.js"
+      ],
+      "env": {}
+    }
+  },
+  "keywords": [
+    "bon-calculadora", "ayudas"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alphahack-program/bon-calculadora-mcp-js"
+  }
+}
