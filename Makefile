@@ -61,14 +61,14 @@ proxy:
 	mitmweb -p 8888 --mode reverse:http://localhost:8000 --web-port 8081
 
 # SSE server for testing locally
-sgw-sse: build
+sgw-sse: build-prod install-prod
 	npx -y supergateway \
     --stdio "node build/index.js" \
     --port 8000 --baseUrl http://localhost:8000 \
     --ssePath /sse --messagePath /message
 
 # MCP server for testing locally
-sgw-mcp: build
+sgw-mcp: build-prod install-prod
 	npx -y supergateway \
 	--stdio "node build/index.js" \
     --outputTransport streamableHttp \

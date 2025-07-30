@@ -16,7 +16,9 @@
       "args": [
         "${__dirname}/build/index.js"
       ],
-      "env": {}
+      "env": {
+        "NODE_ENV": "production"
+      }
     }
   },
   "keywords": [

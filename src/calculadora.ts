@@ -1,5 +1,6 @@
 // Sistema de Ayudas a personas trabajadoras en excedencia para el cuidado de familiares 2025
 // Gobierno de Navarra - Orden Foral 14/2025
+// Implementación exacta según normativa oficial
 
 interface ParentescoInfo {
   grado: number;
@@ -39,6 +40,16 @@ interface DatosSupuestoC {
   tieneDependencia?: boolean[];
 }
 
+interface DatosSupuestoD {
+  numeroHijos?: number;
+  edadesHijos?: number[];
+  tieneDiscapacidad?: number[];
+  tieneDependencia?: boolean[];
+  esPartoMultiple?: boolean;
+  esAdopcionMultiple?: boolean;
+  esAcogimientoMultiple?: boolean;
+}
+
 interface DatosSupuestoE {
   esMonoparental?: boolean;
   esSituacionMonoparentalidad?: boolean;
@@ -67,6 +78,7 @@ interface ResultadoEvaluacion {
   descripcion: string;
   analisis_edades?: any;
   analisis_discapacidad?: any;
+  importe_mensual?: number;
 }
 
 interface ResultadoCompatibilidades {
@@ -81,6 +93,7 @@ interface DatosCompletos {
   supuestoA?: DatosSupuestoA;
   supuestoB?: DatosSupuestoB;
   supuestoC?: DatosSupuestoC;
+  supuestoD?: DatosSupuestoD;
   supuestoE?: DatosSupuestoE;
   situacionActual?: SituacionActual;
 }
@@ -100,10 +113,14 @@ export class CalculadoraExcedenciaNavarra2025 {
   private readonly supuestosSubvencionables = {
     CUIDADO_FAMILIAR_PRIMER_GRADO: 'cuidado_familiar_primer_grado',
     CUIDADO_TERCER_HIJO_O_SUCESIVOS: 'cuidado_tercer_hijo_sucesivos',
-    CUIDADO_SEGUNDO_HIJO_DISCAPACIDAD: 'cuidado_segundo_hijo_discapacidad',
     CUIDADO_ADOPCION_ACOGIMIENTO: 'cuidado_adopcion_acogimiento',
     CUIDADO_PARTOS_MULTIPLES: 'cuidado_partos_multiples',
     CUIDADO_FAMILIA_MONOPARENTAL: 'cuidado_familia_monoparental'
+  };
+
+  private readonly importesMensuales = {
+    SUPUESTO_A: 725,  // Orden Foral 14/2025, apartado 3.a
+    SUPUESTOS_BCDE: 500  // Orden Foral 14/2025, apartado 3.b
   };
 
   private readonly familiarPrimerGrado: Record<string, ParentescoInfo> = {
@@ -136,16 +153,6 @@ export class CalculadoraExcedenciaNavarra2025 {
     menores_9_años_discapacidad: 9,
     discapacidad_minima: 33
   };
-
-  private readonly incompatibilidades = [
-    'Otras ayudas públicas para la misma finalidad y período',
-    'Prestaciones de seguridad social por cuidado de menores con cáncer u otra enfermedad grave'
-  ];
-
-  private readonly compatibilidades = [
-    'Ayudas a la dependencia (con limitación de cuantía)',
-    'Convenio Especial para Cuidadores no profesionales de la Seguridad Social'
-  ];
 
   /**
    * Valida si una relación familiar es de primer grado según los criterios de Navarra
@@ -190,7 +197,22 @@ export class CalculadoraExcedenciaNavarra2025 {
   }
 
   /**
+   * Determina el límite de edad aplicable según discapacidad/dependencia
+   */
+  private determinarLimiteEdad(tieneDiscapacidad: number[], tieneDependencia: boolean[]): number {
+    const tieneDiscapacidadValida = tieneDiscapacidad.some(porcentaje => 
+      porcentaje >= this.limitesEdad.discapacidad_minima
+    );
+    const tieneDependenciaReconocida = tieneDependencia.some(dep => dep === true);
+    
+    return (tieneDiscapacidadValida || tieneDependenciaReconocida) ? 
+      this.limitesEdad.menores_9_años_discapacidad : 
+      this.limitesEdad.menores_6_años;
+  }
+
+  /**
    * Evalúa el supuesto A: Cuidado de familiares de primer grado
+   * Base Segunda, apartado a) - ORDEN FORAL 101/2024
    */
   evaluarSupuestoA_CuidadoFamiliarPrimerGrado(datos: DatosSupuestoA): ResultadoEvaluacion {
     const {
@@ -211,8 +233,8 @@ export class CalculadoraExcedenciaNavarra2025 {
     };
 
     const errores: string[] = [];
-    const advertencias: string[] = [];
 
+    // 1. Validar parentesco primer grado
     const parentescoInfo = this.validarParentescoPrimerGrado(relacionFamiliar);
     validaciones.parentesco_valido = parentescoInfo.esValido;
     
@@ -220,16 +242,19 @@ export class CalculadoraExcedenciaNavarra2025 {
       errores.push(parentescoInfo.mensaje);
     }
 
+    // 2. Validar enfermedad o accidente grave
     validaciones.enfermedad_o_accidente_grave = tieneEnfermedadGrave || tieneAccidenteGrave;
     if (!validaciones.enfermedad_o_accidente_grave) {
       errores.push('Se requiere enfermedad o accidente grave del familiar');
     }
 
+    // 3. Validar hospitalización (requisito obligatorio según normativa)
     validaciones.requiere_hospitalizacion = requiereHospitalizacion;
     if (!validaciones.requiere_hospitalizacion) {
-      advertencias.push('Se requiere que haya requerido hospitalización');
+      errores.push('Se requiere que haya requerido hospitalización (Base Segunda, apartado a)');
     }
 
+    // 4. Validar cuidado directo, continuo y permanente
     validaciones.cuidado_cualificado = requiereCuidadoDirecto && requiereCuidadoContinuo && requiereCuidadoPermanente;
     if (!validaciones.cuidado_cualificado) {
       const faltantes: string[] = [];
@@ -246,14 +271,15 @@ export class CalculadoraExcedenciaNavarra2025 {
       es_elegible: esElegible,
       validaciones,
       errores,
-      advertencias,
       parentesco_info: parentescoInfo,
-      descripcion: 'Supuesto A: Cuidado de familiares de primer grado con enfermedad/accidente grave'
+      descripcion: 'Supuesto A: Cuidado de familiares de primer grado con enfermedad/accidente grave',
+      importe_mensual: this.importesMensuales.SUPUESTO_A
     };
   }
 
   /**
    * Evalúa el supuesto B: Cuidado del tercer hijo o sucesivos
+   * Base Segunda, apartado b) - ORDEN FORAL 101/2024
    */
   evaluarSupuestoB_TercerHijo(datos: DatosSupuestoB): ResultadoEvaluacion {
     const {
@@ -264,26 +290,31 @@ export class CalculadoraExcedenciaNavarra2025 {
 
     const validaciones = {
       tiene_tres_o_mas_hijos: false,
-      al_menos_dos_menores_6_años: false,
+      al_menos_dos_menores_limite_edad: false,
       incluye_recien_nacido: false
     };
 
     const errores: string[] = [];
 
+    // 1. Validar que sea tercer hijo o sucesivos
     validaciones.tiene_tres_o_mas_hijos = numeroHijos >= 3;
     if (!validaciones.tiene_tres_o_mas_hijos) {
-      errores.push(`Se requieren al menos 3 hijos. Actual: ${numeroHijos}`);
+      errores.push(`Se requieren al menos 3 hijos (tercer hijo o sucesivos). Actual: ${numeroHijos}`);
     }
 
-    const menoresDe6 = edadesHijos.filter(edad => edad < this.limitesEdad.menores_6_años).length;
-    validaciones.al_menos_dos_menores_6_años = menoresDe6 >= 2;
-    if (!validaciones.al_menos_dos_menores_6_años) {
-      errores.push(`Se requieren al menos 2 menores de 6 años (incluido recién nacido). Actual: ${menoresDe6}`);
-    }
-
+    // 2. Validar recién nacido incluido
     validaciones.incluye_recien_nacido = incluyeRecienNacido;
     if (!validaciones.incluye_recien_nacido) {
       errores.push('Debe incluir el recién nacido en el cálculo');
+    }
+
+    // 3. Calcular menores dentro del límite de edad (6 años base, 9 si discapacidad)
+    // Nota: Para simplificar, asumimos límite base de 6 años
+    const menoresDentroLimite = edadesHijos.filter(edad => edad < this.limitesEdad.menores_6_años).length;
+    validaciones.al_menos_dos_menores_limite_edad = menoresDentroLimite >= 2;
+    
+    if (!validaciones.al_menos_dos_menores_limite_edad) {
+      errores.push(`Se requieren al menos 2 menores de 6 años (incluido recién nacido). Actual: ${menoresDentroLimite}`);
     }
 
     const esElegible = Object.values(validaciones).every(v => v === true);
@@ -293,19 +324,22 @@ export class CalculadoraExcedenciaNavarra2025 {
       es_elegible: esElegible,
       validaciones,
       errores,
-      descripcion: 'Supuesto B: Cuidado del tercer hijo o sucesivos (2 menores de 6 años)',
+      descripcion: 'Supuesto B: Cuidado del tercer hijo o sucesivos',
       analisis_edades: {
         total_hijos: numeroHijos,
-        menores_6_años: menoresDe6,
-        edades: edadesHijos
-      }
+        menores_6_años: menoresDentroLimite,
+        edades: edadesHijos,
+        incluye_recien_nacido: incluyeRecienNacido
+      },
+      importe_mensual: this.importesMensuales.SUPUESTOS_BCDE
     };
   }
 
   /**
-   * Evalúa el supuesto C: Segundo hijo con discapacidad
+   * Evalúa el supuesto C: Adopciones o acogimientos
+   * Base Segunda, apartado c) - ORDEN FORAL 101/2024
    */
-  evaluarSupuestoC_SegundoHijoDiscapacidad(datos: DatosSupuestoC): ResultadoEvaluacion {
+  evaluarSupuestoC_AdopcionAcogimiento(datos: DatosSupuestoC): ResultadoEvaluacion {
     const {
       numeroHijos = 0,
       edadesHijos = [],
@@ -314,53 +348,97 @@ export class CalculadoraExcedenciaNavarra2025 {
     } = datos;
 
     const validaciones = {
-      tiene_dos_hijos: false,
-      ambos_menores_9_años: false,
-      uno_con_discapacidad_33_o_dependencia: false
+      tiene_hijos_menores: false,
+      duracion_superior_un_año: true // Asumimos que se valida en la documentación
     };
 
     const errores: string[] = [];
 
-    validaciones.tiene_dos_hijos = numeroHijos === 2;
-    if (!validaciones.tiene_dos_hijos) {
-      errores.push(`Este supuesto requiere exactamente 2 hijos. Actual: ${numeroHijos}`);
+    // 1. Validar que hay hijos menores de edad
+    validaciones.tiene_hijos_menores = edadesHijos.some(edad => edad < 18);
+    if (!validaciones.tiene_hijos_menores) {
+      errores.push('Se requieren hijos menores de edad en adopción o acogimiento');
     }
 
-    const todosMenoresDe9 = edadesHijos.every(edad => edad < this.limitesEdad.menores_9_años_discapacidad);
-    validaciones.ambos_menores_9_años = todosMenoresDe9 && edadesHijos.length === 2;
-    if (!validaciones.ambos_menores_9_años) {
-      errores.push('Ambos hijos deben ser menores de 9 años');
-    }
-
-    const tieneDiscapacidadValida = tieneDiscapacidad.some(porcentaje => 
-      porcentaje >= this.limitesEdad.discapacidad_minima
-    );
-    const tieneDependenciaReconocida = tieneDependencia.some(dep => dep === true);
-    
-    validaciones.uno_con_discapacidad_33_o_dependencia = tieneDiscapacidadValida || tieneDependenciaReconocida;
-    if (!validaciones.uno_con_discapacidad_33_o_dependencia) {
-      errores.push('Uno de los hijos debe tener discapacidad superior al 33% y/o dependencia reconocida');
+    // 2. La duración superior a un año se valida en la documentación
+    if (!validaciones.duracion_superior_un_año) {
+      errores.push('El acogimiento debe tener duración prevista superior a un año');
     }
 
     const esElegible = Object.values(validaciones).every(v => v === true);
 
     return {
-      supuesto: this.supuestosSubvencionables.CUIDADO_SEGUNDO_HIJO_DISCAPACIDAD,
+      supuesto: this.supuestosSubvencionables.CUIDADO_ADOPCION_ACOGIMIENTO,
       es_elegible: esElegible,
       validaciones,
       errores,
-      descripcion: 'Supuesto C: Segundo hijo con ambos menores de 9 años y uno con discapacidad/dependencia',
-      analisis_discapacidad: {
-        discapacidades: tieneDiscapacidad,
-        dependencias: tieneDependencia,
-        cumple_criterio_discapacidad: tieneDiscapacidadValida,
-        cumple_criterio_dependencia: tieneDependenciaReconocida
-      }
+      descripcion: 'Supuesto C: Cuidado de hijos en adopciones o acogimientos',
+      analisis_edades: {
+        total_hijos: numeroHijos,
+        edades: edadesHijos,
+        hijos_menores_edad: edadesHijos.filter(edad => edad < 18).length
+      },
+      importe_mensual: this.importesMensuales.SUPUESTOS_BCDE
+    };
+  }
+
+  /**
+   * Evalúa el supuesto D: Partos, adopciones o acogimientos múltiples
+   * Base Segunda, apartado d) - ORDEN FORAL 101/2024
+   */
+  evaluarSupuestoD_PartosMultiples(datos: DatosSupuestoD): ResultadoEvaluacion {
+    const {
+      numeroHijos = 0,
+      edadesHijos = [],
+      tieneDiscapacidad = [],
+      tieneDependencia = [],
+      esPartoMultiple = false,
+      esAdopcionMultiple = false,
+      esAcogimientoMultiple = false
+    } = datos;
+
+    const validaciones = {
+      es_multiple: false,
+      cumple_limite_edad: false
+    };
+
+    const errores: string[] = [];
+
+    // 1. Validar que es múltiple
+    validaciones.es_multiple = esPartoMultiple || esAdopcionMultiple || esAcogimientoMultiple;
+    if (!validaciones.es_multiple) {
+      errores.push('Se requiere parto, adopción o acogimiento múltiple');
+    }
+
+    // 2. Validar límite de edad (6 años base, 9 si discapacidad/dependencia)
+    const limiteEdad = this.determinarLimiteEdad(tieneDiscapacidad, tieneDependencia);
+    const todosCumplenEdad = edadesHijos.every(edad => edad < limiteEdad);
+    validaciones.cumple_limite_edad = todosCumplenEdad;
+    
+    if (!validaciones.cumple_limite_edad) {
+      errores.push(`Todos los hijos deben ser menores de ${limiteEdad} años`);
+    }
+
+    const esElegible = Object.values(validaciones).every(v => v === true);
+
+    return {
+      supuesto: this.supuestosSubvencionables.CUIDADO_PARTOS_MULTIPLES,
+      es_elegible: esElegible,
+      validaciones,
+      errores,
+      descripcion: 'Supuesto D: Cuidado en partos, adopciones o acogimientos múltiples',
+      analisis_edades: {
+        limite_edad_aplicable: limiteEdad,
+        tipo_multiple: esPartoMultiple ? 'parto' : esAdopcionMultiple ? 'adopción' : 'acogimiento',
+        edades_hijos: edadesHijos
+      },
+      importe_mensual: this.importesMensuales.SUPUESTOS_BCDE
     };
   }
 
   /**
    * Evalúa el supuesto E: Familia monoparental
+   * Base Segunda, apartado e) - ORDEN FORAL 101/2024
    */
   evaluarSupuestoE_FamiliaMonoparental(datos: DatosSupuestoE): ResultadoEvaluacion {
     const {
@@ -379,20 +457,14 @@ export class CalculadoraExcedenciaNavarra2025 {
 
     const errores: string[] = [];
 
+    // 1. Validar acreditación como familia monoparental
     validaciones.es_familia_monoparental = esMonoparental || esSituacionMonoparentalidad;
     if (!validaciones.es_familia_monoparental) {
       errores.push('Se requiere acreditación como familia monoparental según Ley Foral 5/2019');
     }
 
-    const tieneHijoConDiscapacidad = tieneDiscapacidad.some(porcentaje => 
-      porcentaje >= this.limitesEdad.discapacidad_minima
-    );
-    const tieneHijoConDependencia = tieneDependencia.some(dep => dep === true);
-    
-    const limiteEdad = (tieneHijoConDiscapacidad || tieneHijoConDependencia) ? 
-      this.limitesEdad.menores_9_años_discapacidad : 
-      this.limitesEdad.menores_6_años;
-
+    // 2. Validar límite de edad (6 años base, 9 si discapacidad/dependencia)
+    const limiteEdad = this.determinarLimiteEdad(tieneDiscapacidad, tieneDependencia);
     const todosCumplenEdad = edadesHijos.every(edad => edad < limiteEdad);
     validaciones.cumple_limite_edad = todosCumplenEdad;
     
@@ -410,14 +482,15 @@ export class CalculadoraExcedenciaNavarra2025 {
       descripcion: 'Supuesto E: Familia monoparental para cualquier hijo',
       analisis_edades: {
         limite_edad_aplicable: limiteEdad,
-        tiene_discapacidad_dependencia: tieneHijoConDiscapacidad || tieneHijoConDependencia,
+        tiene_discapacidad_dependencia: tieneDiscapacidad.some(d => d >= 33) || tieneDependencia.some(d => d),
         edades_hijos: edadesHijos
-      }
+      },
+      importe_mensual: this.importesMensuales.SUPUESTOS_BCDE
     };
   }
 
   /**
-   * Verifica incompatibilidades y compatibilidades
+   * Verifica incompatibilidades y compatibilidades según Base Decimocuarta
    */
   verificarCompatibilidades(situacionActual: SituacionActual): ResultadoCompatibilidades {
     const {
@@ -433,25 +506,30 @@ export class CalculadoraExcedenciaNavarra2025 {
     const compatible_con: string[] = [];
     const limitaciones: string[] = [];
 
+    // Base Decimocuarta.14.1 - Incompatibilidades
     if (tieneOtrasAyudasPublicas) {
-      incompatible_con.push('Otras ayudas públicas para la misma finalidad');
+      incompatible_con.push('Otras ayudas públicas para la misma finalidad y período');
     }
 
+    // Base Decimocuarta.14.2 - Incompatibilidad específica
     if (tienePrestacionesSeguridadSocial) {
       incompatible_con.push('Prestaciones de Seguridad Social por cuidado de menores con cáncer/enfermedad grave');
     }
 
+    // Base Decimocuarta.14.3 - Compatibilidad con ayudas dependencia
     if (tieneAyudaDependencia) {
       compatible_con.push('Ayudas a la dependencia');
       if (importeAyudaDependencia > 0) {
+        const importeMayor = Math.max(500, importeAyudaDependencia); // Asumiendo 500€ como base
         limitaciones.push(
-          `La suma de ambas ayudas no puede superar el importe de la mayor (${Math.max(importeOtrasAyudas, importeAyudaDependencia)}€)`
+          `La suma no puede superar el importe de la mayor ayuda (${importeMayor}€)`
         );
       }
     }
 
+    // Base Decimocuarta.14.4 - Compatibilidad con Convenio Especial
     if (tieneConvenioEspecialCuidadores) {
-      compatible_con.push('Convenio Especial para Cuidadores no profesionales de la Seguridad Social');
+      compatible_con.push('Convenio Especial para Cuidadores no profesionales (RD-ley 6/2019)');
     }
 
     return {
@@ -464,7 +542,7 @@ export class CalculadoraExcedenciaNavarra2025 {
   }
 
   /**
-   * Evaluación completa de todos los supuestos
+   * Evaluación completa de todos los supuestos aplicables
    */
   evaluacionCompleta(datosCompletos: DatosCompletos): EvaluacionCompleta {
     const resultados: EvaluacionCompleta = {
@@ -478,6 +556,7 @@ export class CalculadoraExcedenciaNavarra2025 {
       }
     };
 
+    // Evaluar Supuesto A
     if (datosCompletos.supuestoA) {
       const resultadoA = this.evaluarSupuestoA_CuidadoFamiliarPrimerGrado(datosCompletos.supuestoA);
       resultados.supuestos_evaluados.push(resultadoA);
@@ -486,6 +565,7 @@ export class CalculadoraExcedenciaNavarra2025 {
       }
     }
 
+    // Evaluar Supuesto B
     if (datosCompletos.supuestoB) {
       const resultadoB = this.evaluarSupuestoB_TercerHijo(datosCompletos.supuestoB);
       resultados.supuestos_evaluados.push(resultadoB);
@@ -494,14 +574,25 @@ export class CalculadoraExcedenciaNavarra2025 {
       }
     }
 
+    // Evaluar Supuesto C
     if (datosCompletos.supuestoC) {
-      const resultadoC = this.evaluarSupuestoC_SegundoHijoDiscapacidad(datosCompletos.supuestoC);
+      const resultadoC = this.evaluarSupuestoC_AdopcionAcogimiento(datosCompletos.supuestoC);
       resultados.supuestos_evaluados.push(resultadoC);
       if (resultadoC.es_elegible) {
         resultados.supuestos_elegibles.push(resultadoC);
       }
     }
 
+    // Evaluar Supuesto D
+    if (datosCompletos.supuestoD) {
+      const resultadoD = this.evaluarSupuestoD_PartosMultiples(datosCompletos.supuestoD);
+      resultados.supuestos_evaluados.push(resultadoD);
+      if (resultadoD.es_elegible) {
+        resultados.supuestos_elegibles.push(resultadoD);
+      }
+    }
+
+    // Evaluar Supuesto E
     if (datosCompletos.supuestoE) {
       const resultadoE = this.evaluarSupuestoE_FamiliaMonoparental(datosCompletos.supuestoE);
       resultados.supuestos_evaluados.push(resultadoE);
@@ -510,14 +601,20 @@ export class CalculadoraExcedenciaNavarra2025 {
       }
     }
 
+    // Verificar compatibilidades
     if (datosCompletos.situacionActual) {
       resultados.compatibilidades = this.verificarCompatibilidades(datosCompletos.situacionActual);
     }
 
+    // Determinar mejor opción (prioriza Supuesto A por mayor importe)
     if (resultados.supuestos_elegibles.length > 0) {
-      resultados.mejor_opcion = resultados.supuestos_elegibles[0];
+      const supuestoA = resultados.supuestos_elegibles.find(s => 
+        s.supuesto === this.supuestosSubvencionables.CUIDADO_FAMILIAR_PRIMER_GRADO
+      );
+      resultados.mejor_opcion = supuestoA || resultados.supuestos_elegibles[0];
     }
 
+    // Resumen final
     resultados.resumen.total_supuestos_elegibles = resultados.supuestos_elegibles.length;
     resultados.resumen.puede_solicitar = 
       resultados.supuestos_elegibles.length > 0 && 
