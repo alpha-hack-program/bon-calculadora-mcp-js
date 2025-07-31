@@ -17,11 +17,14 @@ else
 fi
 
 # Default values and computed variables
-APP_NAME="${APP_NAME:-weather-mcp}"
+APP_NAME="${APP_NAME:-test-mcp}"
+MAINTAINER="${MAINTAINER-test@acme.com}"
+DESCRIPTION="${DESCRIPTION-"Test MCP Server"}"
 VERSION="${VERSION:-$(git rev-parse --short HEAD 2>/dev/null || echo 'latest')}"
 IMAGE_TAG="${REGISTRY}/${APP_NAME}:${VERSION}"
 LATEST_TAG="${REGISTRY}/${APP_NAME}:latest"
 CONTAINERFILE="${CONTAINERFILE:-Containerfile}"
+SOURCE="${SOURCE:-https://github.com/acme/test-mcp.git}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -96,6 +99,11 @@ build() {
         "--build-arg" "VERSION=${VERSION}"
         "--build-arg" "BUILD_DATE=${build_date}"
         "--build-arg" "VCS_REF=${vcs_ref}"
+        "--build-arg" "MAINTAINER=${MAINTAINER}"
+        "--build-arg" "DESCRIPTION=${DESCRIPTION}"
+        "--build-arg" "APP_NAME=${APP_NAME}"
+        "--build-arg" "PORT=${PORT}"
+        "--build-arg" "SOURCE=${SOURCE}"
     )
     
     # Add cache flag if specified
@@ -112,6 +120,11 @@ build() {
     log_info "  VERSION=${VERSION}"
     log_info "  BUILD_DATE=${build_date}"
     log_info "  VCS_REF=${vcs_ref:0:8}"
+    log_info "  MAINTAINER=${MAINTAINER}"
+    log_info "  DESCRIPTION=${DESCRIPTION}"
+    log_info "  APP_NAME=${APP_NAME}"
+    log_info "  PORT=${PORT}"
+    log_info "  SOURCE=${SOURCE}"
     
     if "$(get_runtime)" build "${build_args[@]}"; then
         log_success "Build completed successfully"

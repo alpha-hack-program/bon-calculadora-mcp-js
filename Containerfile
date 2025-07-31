@@ -7,7 +7,7 @@ FROM ${BASE_IMAGE}:${BASE_TAG} as builder
 
 # Add metadata labels
 LABEL stage=builder
-LABEL description="Build stage for weather-mcp application"
+LABEL description="Build stage for MCP Server application"
 
 WORKDIR /opt/app-root/src
 
@@ -33,22 +33,27 @@ RUN npm ci && \
 FROM ${BASE_IMAGE}:${BASE_TAG}
 
 # Build arguments available in production stage
+ARG APP_NAME
 ARG BASE_IMAGE
 ARG BASE_TAG
-ARG VERSION=latest
+ARG VERSION
 ARG BUILD_DATE
 ARG VCS_REF
+ARG MAINTAINER
+ARG DESCRIPTION
+ARG SOURCE
+ARG PORT=8000
 
 # Metadata labels for the final image
-LABEL maintainer="Your Name <your.email@example.com>"
+LABEL maintainer="${MAINTAINER}"
 LABEL version="${VERSION}"
-LABEL description="Weather MCP Server - Model Context Protocol server for weather data"
-LABEL org.opencontainers.image.title="weather-mcp"
-LABEL org.opencontainers.image.description="Weather MCP Server"
+LABEL description="${DESCRIPTION}"
+LABEL org.opencontainers.image.title="${APP_NAME}"
+LABEL org.opencontainers.image.description="${DESCRIPTION}"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
 LABEL org.opencontainers.image.revision="${VCS_REF}"
-LABEL org.opencontainers.image.source="https://github.com/your-org/weather-mcp"
+LABEL org.opencontainers.image.source="${SOURCE}"
 LABEL org.opencontainers.image.base.name="${BASE_IMAGE}:${BASE_TAG}"
 
 # Copy built application from builder stage
@@ -67,8 +72,8 @@ ENV PATH=/opt/app-root/src/node_modules/.bin:$PATH
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD node -e "console.log('Health check passed')" || exit 1
 
-# Expose 8000
-EXPOSE 8000
+# Expose PORT
+EXPOSE ${PORT}
 
 # Default command using supergateway for stdio transport
 CMD ["npx", "-y", "supergateway", "--stdio", "node build/index.js"]
