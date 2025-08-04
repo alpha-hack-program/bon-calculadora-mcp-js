@@ -1,11 +1,10 @@
-#!/usr/bin/env node
+//!/usr/bin/env node
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { CalculadoraExcedenciaNavarra2025 } from "./calculadora.js";
 
-// Create server instance
 const server = new McpServer({
   name: "bon-calculadora",
   version: "1.0.0",
@@ -15,10 +14,8 @@ const server = new McpServer({
   },
 });
 
-// Create calculator instance
 const calculadora = new CalculadoraExcedenciaNavarra2025();
 
-// Helper functions for type coercion (LlamaStack compatibility)
 function parseBoolean(value: any): boolean | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'boolean') return value;
@@ -51,404 +48,243 @@ function parseArray(value: any, itemParser?: (item: any) => any): any[] | undefi
       if (Array.isArray(parsed)) {
         return itemParser ? parsed.map(itemParser) : parsed;
       }
-    } catch (e) {
-      // If JSON parsing fails, return undefined
-    }
+    } catch {}
   }
   return undefined;
 }
 
-// Tool to validate kinship relationship
-server.tool(
-  "validar_parentesco",
-  "Valida si una relación familiar es de primer grado según los criterios de Navarra",
-  {
-    relacion: z.string().describe("Tipo de relación familiar (ej: madre, padre, hijo, conyuge)"),
-  },
-  async ({ relacion }) => {
-    try {
-      const resultado = calculadora.validarParentescoPrimerGrado(relacion);
-      
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(resultado, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error validando parentesco: ${error instanceof Error ? error.message : 'Error desconocido'}`,
-          },
-        ],
-      };
-    }
-  },
-);
+// TOOL DEFINITIONS
 
-// Individual evaluation tools for each supuesto
-server.tool(
-  "evaluar_supuesto_a",
-  "Evalúa el Supuesto A: Cuidado de familiares de primer grado con enfermedad/accidente grave",
-  {
-    relacionFamiliar: z.string().describe("Relación familiar (madre, padre, hijo, conyuge, etc.)"),
-    tieneEnfermedadGrave: z.union([z.boolean(), z.string()]).optional().describe("¿Tiene enfermedad grave?"),
-    tieneAccidenteGrave: z.union([z.boolean(), z.string()]).optional().describe("¿Tiene accidente grave?"),
-    requiereHospitalizacion: z.union([z.boolean(), z.string()]).optional().describe("¿Requiere/requirió hospitalización?"),
-    requiereCuidadoContinuo: z.union([z.boolean(), z.string()]).optional().describe("¿Requiere cuidado continuo?"),
-    requiereCuidadoPermanente: z.union([z.boolean(), z.string()]).optional().describe("¿Requiere cuidado permanente?"),
-    requiereCuidadoDirecto: z.union([z.boolean(), z.string()]).optional().describe("¿Requiere cuidado directo?"),
-  },
-  async (params) => {
-    try {
-      const datos = {
-        relacionFamiliar: params.relacionFamiliar,
-        tieneEnfermedadGrave: parseBoolean(params.tieneEnfermedadGrave),
-        tieneAccidenteGrave: parseBoolean(params.tieneAccidenteGrave),
-        requiereHospitalizacion: parseBoolean(params.requiereHospitalizacion),
-        requiereCuidadoContinuo: parseBoolean(params.requiereCuidadoContinuo),
-        requiereCuidadoPermanente: parseBoolean(params.requiereCuidadoPermanente),
-        requiereCuidadoDirecto: parseBoolean(params.requiereCuidadoDirecto),
-      };
+// Herramienta para evaluar elegibilidad básica y orientar hacia el supuesto correcto
+// Agregar al archivo index.ts después de las otras herramientas
 
-      const resultado = calculadora.evaluarSupuestoA_CuidadoFamiliarPrimerGrado(datos);
-      
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(resultado, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error evaluando Supuesto A: ${error instanceof Error ? error.message : 'Error desconocido'}`,
-          },
-        ],
-      };
-    }
-  },
-);
-
-server.tool(
-  "evaluar_supuesto_b",
-  "Evalúa el Supuesto B: Cuidado del tercer hijo o sucesivos",
-  {
-    numeroHijos: z.union([z.number(), z.string()]).describe("Número total de hijos"),
-    edadesHijos: z.union([z.array(z.number()), z.string()]).describe("Edades de todos los hijos (array)"),
-    incluyeRecienNacido: z.union([z.boolean(), z.string()]).describe("¿Incluye recién nacido?"),
-  },
-  async (params) => {
-    try {
-      const datos = {
-        numeroHijos: parseNumber(params.numeroHijos),
-        edadesHijos: parseArray(params.edadesHijos, parseNumber)?.filter(n => n !== undefined),
-        incluyeRecienNacido: parseBoolean(params.incluyeRecienNacido),
-      };
-
-      const resultado = calculadora.evaluarSupuestoB_TercerHijo(datos);
-      
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(resultado, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error evaluando Supuesto B: ${error instanceof Error ? error.message : 'Error desconocido'}`,
-          },
-        ],
-      };
-    }
-  },
-);
-
-server.tool(
-  "evaluar_supuesto_e",
-  "Evalúa el Supuesto E: Familia monoparental",
-  {
-    esMonoparental: z.union([z.boolean(), z.string()]).describe("¿Es familia monoparental acreditada?"),
-    esSituacionMonoparentalidad: z.union([z.boolean(), z.string()]).optional().describe("¿Situación de monoparentalidad?"),
-    numeroHijos: z.union([z.number(), z.string()]).describe("Número total de hijos"),
-    edadesHijos: z.union([z.array(z.number()), z.string()]).describe("Edades de los hijos"),
-    tieneDiscapacidad: z.union([z.array(z.number()), z.string()]).optional().describe("Porcentajes de discapacidad por hijo"),
-    tieneDependencia: z.union([z.array(z.boolean()), z.string()]).optional().describe("Dependencia reconocida por hijo"),
-  },
-  async (params) => {
-    try {
-      const datos = {
-        esMonoparental: parseBoolean(params.esMonoparental),
-        esSituacionMonoparentalidad: parseBoolean(params.esSituacionMonoparentalidad),
-        numeroHijos: parseNumber(params.numeroHijos),
-        edadesHijos: parseArray(params.edadesHijos, parseNumber)?.filter(n => n !== undefined),
-        tieneDiscapacidad: parseArray(params.tieneDiscapacidad, parseNumber)?.filter(n => n !== undefined) || [],
-        tieneDependencia: parseArray(params.tieneDependencia, parseBoolean)?.filter(b => b !== undefined) || [],
-      };
-
-      const resultado = calculadora.evaluarSupuestoE_FamiliaMonoparental(datos);
-      
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(resultado, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error evaluando Supuesto E: ${error instanceof Error ? error.message : 'Error desconocido'}`,
-          },
-        ],
-      };
-    }
-  },
-);
-
-// Herramienta simplificada para casos específicos con discapacidad
-server.tool(
-  "evaluar_caso_discapacidad",
-  "Herramienta simplificada para evaluar casos con menores con discapacidad",
-  {
-    hijo1_edad: z.union([z.number(), z.string()]).describe("Edad del primer hijo"),
-    hijo1_discapacidad: z.union([z.number(), z.string()]).optional().describe("Porcentaje discapacidad primer hijo (0 si no tiene)"),
-    hijo2_edad: z.union([z.number(), z.string()]).optional().describe("Edad del segundo hijo"),
-    hijo2_discapacidad: z.union([z.number(), z.string()]).optional().describe("Porcentaje discapacidad segundo hijo (0 si no tiene)"),
-    es_monoparental: z.union([z.boolean(), z.string()]).optional().describe("¿Es familia monoparental?"),
-  },
-  async (params) => {
-    try {
-      const edad1 = parseNumber(params.hijo1_edad);
-      const disc1 = parseNumber(params.hijo1_discapacidad) || 0;
-      const edad2 = parseNumber(params.hijo2_edad);
-      const disc2 = parseNumber(params.hijo2_discapacidad) || 0;
-      const monoparental = parseBoolean(params.es_monoparental) || false;
-
-      const edades = edad2 !== undefined ? [edad1!, edad2] : [edad1!];
-      const discapacidades = edad2 !== undefined ? [disc1, disc2] : [disc1];
-      const dependencias = discapacidades.map(d => d >= 33);
-
-      const resultados: any = {
-        datos_analizados: {
-          edades,
-          discapacidades,
-          es_monoparental: monoparental
-        },
-        evaluaciones: []
-      };
-
-      // Evaluar Supuesto E si es monoparental
-      if (monoparental) {
-        const datosE = {
-          esMonoparental: true,
-          numeroHijos: edades.length,
-          edadesHijos: edades,
-          tieneDiscapacidad: discapacidades,
-          tieneDependencia: dependencias,
-        };
-        const resultadoE = calculadora.evaluarSupuestoE_FamiliaMonoparental(datosE);
-        resultados.evaluaciones.push(resultadoE);
-      }
-
-      // Evaluar Supuesto B si hay 2+ hijos
-      if (edades.length >= 2) {
-        const datosB = {
-          numeroHijos: edades.length,
-          edadesHijos: edades,
-          incluyeRecienNacido: edades.some(e => e === 0),
-        };
-        const resultadoB = calculadora.evaluarSupuestoB_TercerHijo(datosB);
-        resultados.evaluaciones.push(resultadoB);
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(resultados, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error en evaluación de caso discapacidad: ${error instanceof Error ? error.message : 'Error desconocido'}`,
-          },
-        ],
-      };
-    }
-  },
-);
-
-// Tool for complete evaluation with flexible input handling
-server.tool(
-  "evaluacion_completa",
-  "Realiza una evaluación completa de todos los supuestos aplicables",
-  {
-    // Supuesto A parameters
-    supuestoA_relacionFamiliar: z.union([z.string(), z.undefined()]).optional().describe("Relación familiar para supuesto A"),
-    supuestoA_tieneEnfermedadGrave: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Familiar tiene enfermedad grave? (Supuesto A)"),
-    supuestoA_tieneAccidenteGrave: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Familiar tiene accidente grave? (Supuesto A)"),
-    supuestoA_requiereHospitalizacion: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Requiere/requirió hospitalización? (Supuesto A)"),
-    supuestoA_requiereCuidadoContinuo: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Requiere cuidado continuo? (Supuesto A)"),
-    supuestoA_requiereCuidadoPermanente: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Requiere cuidado permanente? (Supuesto A)"),
-    supuestoA_requiereCuidadoDirecto: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Requiere cuidado directo? (Supuesto A)"),
+server.tool("evaluar_elegibilidad_basica", 
+  "Evalúa elegibilidad básica y recomienda qué supuesto específico evaluar. USAR SIEMPRE PRIMERO antes de evaluar supuestos específicos.", {
+  situacion: z.string().describe("Descripción completa de la situación (ej: 'padre soltero con 5 hijos', 'cuñada embarazada', 'tercer hijo recién nacido')"),
+  tieneHijosNacidos: z.any().optional().describe("¿Ya tiene hijos nacidos? (no embarazo)"),
+  esMonoparental: z.any().optional().describe("¿Es familia monoparental o padre/madre soltero/a?"),
+  numeroHijos: z.any().optional().describe("Número total de hijos ya nacidos"),
+  relacionFamiliar: z.string().optional().describe("Si es cuidado de familiar: relación (padre, madre, hijo, etc.)")
+}, async (params) => {
+  try {
+    const situacion = params.situacion.toLowerCase();
+    const tieneHijos = parseBoolean(params.tieneHijosNacidos);
+    const esMonoparental = parseBoolean(params.esMonoparental);
+    const numeroHijos = parseNumber(params.numeroHijos) || 0;
+    const relacionFamiliar = params.relacionFamiliar?.toLowerCase() || '';
     
-    // Supuesto B parameters
-    supuestoB_numeroHijos: z.union([z.number(), z.string(), z.undefined()]).optional().describe("Número total de hijos (Supuesto B)"),
-    supuestoB_edadesHijos: z.union([z.array(z.number()), z.string(), z.undefined()]).optional().describe("Edades de todos los hijos (Supuesto B)"),
-    supuestoB_incluyeRecienNacido: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Incluye recién nacido? (Supuesto B)"),
-    
-    // Supuesto C parameters
-    supuestoC_numeroHijos: z.union([z.number(), z.string(), z.undefined()]).optional().describe("Número total de hijos (Supuesto C)"),
-    supuestoC_edadesHijos: z.union([z.array(z.number()), z.string(), z.undefined()]).optional().describe("Edades de los hijos (Supuesto C)"),
-    supuestoC_tieneDiscapacidad: z.union([z.array(z.number()), z.string(), z.undefined()]).optional().describe("Porcentajes de discapacidad (Supuesto C)"),
-    supuestoC_tieneDependencia: z.union([z.array(z.boolean()), z.string(), z.undefined()]).optional().describe("Dependencia reconocida por hijo (Supuesto C)"),
-    
-    // Supuesto D parameters
-    supuestoD_numeroHijos: z.union([z.number(), z.string(), z.undefined()]).optional().describe("Número total de hijos (Supuesto D)"),
-    supuestoD_edadesHijos: z.union([z.array(z.number()), z.string(), z.undefined()]).optional().describe("Edades de los hijos (Supuesto D)"),
-    supuestoD_tieneDiscapacidad: z.union([z.array(z.number()), z.string(), z.undefined()]).optional().describe("Porcentajes de discapacidad (Supuesto D)"),
-    supuestoD_tieneDependencia: z.union([z.array(z.boolean()), z.string(), z.undefined()]).optional().describe("Dependencia reconocida por hijo (Supuesto D)"),
-    supuestoD_esPartoMultiple: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Es parto múltiple? (Supuesto D)"),
-    supuestoD_esAdopcionMultiple: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Es adopción múltiple? (Supuesto D)"),
-    supuestoD_esAcogimientoMultiple: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Es acogimiento múltiple? (Supuesto D)"),
-    
-    // Supuesto E parameters
-    supuestoE_esMonoparental: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Es familia monoparental? (Supuesto E)"),
-    supuestoE_esSituacionMonoparentalidad: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Situación de monoparentalidad? (Supuesto E)"),
-    supuestoE_numeroHijos: z.union([z.number(), z.string(), z.undefined()]).optional().describe("Número total de hijos (Supuesto E)"),
-    supuestoE_edadesHijos: z.union([z.array(z.number()), z.string(), z.undefined()]).optional().describe("Edades de los hijos (Supuesto E)"),
-    supuestoE_tieneDiscapacidad: z.union([z.array(z.number()), z.string(), z.undefined()]).optional().describe("Porcentajes de discapacidad (Supuesto E)"),
-    supuestoE_tieneDependencia: z.union([z.array(z.boolean()), z.string(), z.undefined()]).optional().describe("Dependencia reconocida por hijo (Supuesto E)"),
-    
-    // Compatibility parameters
-    tieneOtrasAyudasPublicas: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Tiene otras ayudas públicas?"),
-    tienePrestacionesSeguridadSocial: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Tiene prestaciones de seguridad social?"),
-    tieneAyudaDependencia: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Tiene ayudas a la dependencia?"),
-    tieneConvenioEspecialCuidadores: z.union([z.boolean(), z.string(), z.undefined()]).optional().describe("¿Tiene convenio especial para cuidadores?"),
-    importeOtrasAyudas: z.union([z.number(), z.string(), z.undefined()]).optional().describe("Importe de otras ayudas"),
-    importeAyudaDependencia: z.union([z.number(), z.string(), z.undefined()]).optional().describe("Importe de ayuda a la dependencia"),
-  },
-  async (params) => {
-    try {
-      const datosCompletos: any = {};
+    const resultado = {
+      es_elegible_general: false,
+      razon_principal: '',
+      supuestos_recomendados: [] as string[],
+      herramientas_a_usar: [] as string[],
+      parametros_sugeridos: {} as any,
+      advertencias: [] as string[]
+    };
 
-      // Build Supuesto A data if provided
-      if (params.supuestoA_relacionFamiliar) {
-        datosCompletos.supuestoA = {
-          relacionFamiliar: params.supuestoA_relacionFamiliar,
-          tieneEnfermedadGrave: parseBoolean(params.supuestoA_tieneEnfermedadGrave),
-          tieneAccidenteGrave: parseBoolean(params.supuestoA_tieneAccidenteGrave),
-          requiereHospitalizacion: parseBoolean(params.supuestoA_requiereHospitalizacion),
-          requiereCuidadoContinuo: parseBoolean(params.supuestoA_requiereCuidadoContinuo),
-          requiereCuidadoPermanente: parseBoolean(params.supuestoA_requiereCuidadoPermanente),
-          requiereCuidadoDirecto: parseBoolean(params.supuestoA_requiereCuidadoDirecto),
-        };
-      }
-
-      // Build Supuesto B data if provided
-      if (params.supuestoB_numeroHijos !== undefined) {
-        datosCompletos.supuestoB = {
-          numeroHijos: parseNumber(params.supuestoB_numeroHijos),
-          edadesHijos: parseArray(params.supuestoB_edadesHijos, parseNumber)?.filter(n => n !== undefined),
-          incluyeRecienNacido: parseBoolean(params.supuestoB_incluyeRecienNacido),
-        };
-      }
-
-      // Build Supuesto C data if provided
-      if (params.supuestoC_numeroHijos !== undefined) {
-        datosCompletos.supuestoC = {
-          numeroHijos: parseNumber(params.supuestoC_numeroHijos),
-          edadesHijos: parseArray(params.supuestoC_edadesHijos, parseNumber)?.filter(n => n !== undefined),
-          tieneDiscapacidad: parseArray(params.supuestoC_tieneDiscapacidad, parseNumber)?.filter(n => n !== undefined),
-          tieneDependencia: parseArray(params.supuestoC_tieneDependencia, parseBoolean)?.filter(b => b !== undefined),
-        };
-      }
-
-      // Build Supuesto D data if provided
-      if (params.supuestoD_numeroHijos !== undefined) {
-        datosCompletos.supuestoD = {
-          numeroHijos: parseNumber(params.supuestoD_numeroHijos),
-          edadesHijos: parseArray(params.supuestoD_edadesHijos, parseNumber)?.filter(n => n !== undefined),
-          tieneDiscapacidad: parseArray(params.supuestoD_tieneDiscapacidad, parseNumber)?.filter(n => n !== undefined),
-          tieneDependencia: parseArray(params.supuestoD_tieneDependencia, parseBoolean)?.filter(b => b !== undefined),
-          esPartoMultiple: parseBoolean(params.supuestoD_esPartoMultiple),
-          esAdopcionMultiple: parseBoolean(params.supuestoD_esAdopcionMultiple),
-          esAcogimientoMultiple: parseBoolean(params.supuestoD_esAcogimientoMultiple),
-        };
-      }
-
-      // Build Supuesto E data if provided
-      if (params.supuestoE_esMonoparental !== undefined || params.supuestoE_numeroHijos !== undefined) {
-        datosCompletos.supuestoE = {
-          esMonoparental: parseBoolean(params.supuestoE_esMonoparental),
-          esSituacionMonoparentalidad: parseBoolean(params.supuestoE_esSituacionMonoparentalidad),
-          numeroHijos: parseNumber(params.supuestoE_numeroHijos),
-          edadesHijos: parseArray(params.supuestoE_edadesHijos, parseNumber)?.filter(n => n !== undefined),
-          tieneDiscapacidad: parseArray(params.supuestoE_tieneDiscapacidad, parseNumber)?.filter(n => n !== undefined),
-          tieneDependencia: parseArray(params.supuestoE_tieneDependencia, parseBoolean)?.filter(b => b !== undefined),
-        };
-      }
-
-      // Build compatibility data if any parameter is provided
-      if (params.tieneOtrasAyudasPublicas !== undefined || 
-          params.tienePrestacionesSeguridadSocial !== undefined ||
-          params.tieneAyudaDependencia !== undefined ||
-          params.tieneConvenioEspecialCuidadores !== undefined) {
-        datosCompletos.situacionActual = {
-          tieneOtrasAyudasPublicas: parseBoolean(params.tieneOtrasAyudasPublicas),
-          tienePrestacionesSeguridadSocial: parseBoolean(params.tienePrestacionesSeguridadSocial),
-          tieneAyudaDependencia: parseBoolean(params.tieneAyudaDependencia),
-          tieneConvenioEspecialCuidadores: parseBoolean(params.tieneConvenioEspecialCuidadores),
-          importeOtrasAyudas: parseNumber(params.importeOtrasAyudas),
-          importeAyudaDependencia: parseNumber(params.importeAyudaDependencia),
-        };
-      }
-
-      const resultado = calculadora.evaluacionCompleta(datosCompletos);
-      
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(resultado, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error en evaluación completa: ${error instanceof Error ? error.message : 'Error desconocido'}`,
-          },
-        ],
-      };
+    // 1. CASO: EMBARAZO SIN HIJOS NACIDOS
+    if (situacion.includes('embarazada') && (tieneHijos === false || numeroHijos === 0)) {
+      resultado.es_elegible_general = false;
+      resultado.razon_principal = 'Las ayudas por excedencia requieren hijos YA NACIDOS. Durante el embarazo no se puede solicitar.';
+      resultado.advertencias.push('Podrá solicitar la ayuda DESPUÉS del parto si cumple los requisitos');
+      resultado.supuestos_recomendados = ['Evaluar después del nacimiento'];
+      return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
     }
-  },
-);
 
-// Error handling
+    // 2. CASO: CUIDADO DE FAMILIAR ADULTO
+    if (relacionFamiliar && !['hijo', 'hija'].includes(relacionFamiliar)) {
+      const parentescoValido = calculadora.validarParentescoPrimerGrado(relacionFamiliar);
+      
+      if (!parentescoValido.esValido) {
+        resultado.es_elegible_general = false;
+        resultado.razon_principal = `Relación '${relacionFamiliar}' no es familiar de primer grado según normativa Navarra`;
+        resultado.advertencias.push('Solo se admiten: padre, madre, hijo, hija, cónyuge, pareja');
+        return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+      }
+
+      resultado.es_elegible_general = true;
+      resultado.razon_principal = 'Familiar de primer grado válido - evaluar Supuesto A';
+      resultado.supuestos_recomendados = ['Supuesto A: Cuidado familiar primer grado'];
+      resultado.herramientas_a_usar = ['evaluar_supuesto_a'];
+      resultado.parametros_sugeridos = {
+        relacionFamiliar: relacionFamiliar,
+        requiere_completar: ['tieneEnfermedadGrave', 'tieneAccidenteGrave', 'requiereHospitalizacion', 'requiereCuidadoContinuo', 'requiereCuidadoPermanente', 'requiereCuidadoDirecto']
+      };
+      return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+    }
+
+    // 3. CASO: NO TIENE HIJOS NACIDOS
+    if (tieneHijos === false || numeroHijos === 0) {
+      resultado.es_elegible_general = false;
+      resultado.razon_principal = 'Se requieren hijos ya nacidos para solicitar excedencia por cuidado de hijos';
+      return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+    }
+
+    // 4. CASO: FAMILIA MONOPARENTAL (PRIORIDAD ALTA)
+    if (esMonoparental === true || 
+        situacion.includes('soltero') || 
+        situacion.includes('soltera') || 
+        situacion.includes('monoparental') ||
+        situacion.includes('padre solo') ||
+        situacion.includes('madre sola')) {
+      
+      resultado.es_elegible_general = true;
+      resultado.razon_principal = 'Familia monoparental detectada - usar SUPUESTO E (válido para cualquier hijo: 1º, 2º, 3º...)';
+      resultado.supuestos_recomendados = ['Supuesto E: Familia monoparental'];
+      resultado.herramientas_a_usar = ['evaluar_supuesto_e'];
+      resultado.parametros_sugeridos = {
+        esMonoparental: true,
+        numeroHijos: numeroHijos,
+        requiere_completar: ['edadesHijos']
+      };
+      resultado.advertencias.push('IMPORTANTE: Para familias monoparentales usar SIEMPRE Supuesto E, NO Supuesto B');
+      return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+    }
+
+    // 5. CASO: TERCER HIJO O MÁS (solo si NO es monoparental)
+    if (numeroHijos >= 3 || situacion.includes('tercer hijo') || situacion.includes('3 hijos')) {
+      resultado.es_elegible_general = true;
+      resultado.razon_principal = 'Tercer hijo o más detectado - evaluar Supuesto B';
+      resultado.supuestos_recomendados = ['Supuesto B: Tercer hijo o sucesivos'];
+      resultado.herramientas_a_usar = ['evaluar_supuesto_b'];
+      resultado.parametros_sugeridos = {
+        numeroHijos: numeroHijos,
+        incluyeRecienNacido: true,
+        requiere_completar: ['edadesHijos']
+      };
+      resultado.advertencias.push('Requiere recién nacido + al menos 2 menores de 6 años');
+      return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+    }
+
+    // 6. CASO: ADOPCIÓN/ACOGIMIENTO
+    if (situacion.includes('adopc') || situacion.includes('acogimiento')) {
+      resultado.es_elegible_general = true;
+      resultado.razon_principal = 'Adopción o acogimiento detectado - evaluar Supuesto C';
+      resultado.supuestos_recomendados = ['Supuesto C: Adopción/Acogimiento'];
+      resultado.herramientas_a_usar = ['evaluar_supuesto_c'];
+      resultado.advertencias.push('Requiere duración prevista superior a 1 año');
+      return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+    }
+
+    // 7. CASO: PARTO MÚLTIPLE
+    if (situacion.includes('gemelos') || situacion.includes('mellizos') || situacion.includes('múltiple')) {
+      resultado.es_elegible_general = true;
+      resultado.razon_principal = 'Parto múltiple detectado - evaluar Supuesto D';
+      resultado.supuestos_recomendados = ['Supuesto D: Partos múltiples'];
+      resultado.herramientas_a_usar = ['evaluar_supuesto_d'];
+      resultado.parametros_sugeridos = {
+        esPartoMultiple: true
+      };
+      return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+    }
+
+    // 8. CASO: SITUACIÓN NO CLARA - PEDIR MÁS INFORMACIÓN
+    if (numeroHijos > 0) {
+      resultado.es_elegible_general = true;
+      resultado.razon_principal = 'Tiene hijos nacidos - necesita más información para determinar supuesto exacto';
+      resultado.supuestos_recomendados = ['Requiere clarificación'];
+      resultado.advertencias.push('Especificar: ¿Es familia monoparental? ¿Cuántos hijos? ¿Adopción/acogimiento?');
+      return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+    }
+
+    // 9. CASO POR DEFECTO - NO ELEGIBLE
+    resultado.es_elegible_general = false;
+    resultado.razon_principal = 'No se puede determinar elegibilidad con la información proporcionada';
+    resultado.advertencias.push('Proporcionar más detalles sobre la situación familiar');
+
+    return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+
+  } catch (error) {
+    return { 
+      content: [{ 
+        type: "text", 
+        text: `Error evaluando elegibilidad básica: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+      }] 
+    };
+  }
+});
+
+
+server.tool("validar_parentesco", "Valida si una relación familiar es de primer grado según los criterios de Navarra", {
+  relacion: z.string().describe("Tipo de relación familiar (ej: madre, padre, hijo, conyuge)")
+}, async ({ relacion }) => {
+  try {
+    const resultado = calculadora.validarParentescoPrimerGrado(relacion);
+    return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+  } catch (error) {
+    return { content: [{ type: "text", text: `Error validando parentesco: ${error instanceof Error ? error.message : 'Error desconocido'}` }] };
+  }
+});
+
+server.tool("evaluar_supuesto_a", "Evalúa el Supuesto A: Cuidado de familiares de primer grado con enfermedad/accidente grave", {
+  relacionFamiliar: z.string().describe("Relación familiar (madre, padre, hijo, conyuge, etc.)"),
+  tieneEnfermedadGrave: z.any().describe("¿Tiene enfermedad grave?"),
+  tieneAccidenteGrave: z.any().describe("¿Tiene accidente grave?"),
+  requiereHospitalizacion: z.any().describe("¿Requiere/requirió hospitalización?"),
+  requiereCuidadoContinuo: z.any().describe("¿Requiere cuidado continuo?"),
+  requiereCuidadoPermanente: z.any().describe("¿Requiere cuidado permanente?"),
+  requiereCuidadoDirecto: z.any().describe("¿Requiere cuidado directo?")
+}, async (params) => {
+  try {
+    const datos = {
+      relacionFamiliar: params.relacionFamiliar,
+      tieneEnfermedadGrave: parseBoolean(params.tieneEnfermedadGrave),
+      tieneAccidenteGrave: parseBoolean(params.tieneAccidenteGrave),
+      requiereHospitalizacion: parseBoolean(params.requiereHospitalizacion),
+      requiereCuidadoContinuo: parseBoolean(params.requiereCuidadoContinuo),
+      requiereCuidadoPermanente: parseBoolean(params.requiereCuidadoPermanente),
+      requiereCuidadoDirecto: parseBoolean(params.requiereCuidadoDirecto),
+    };
+    const resultado = calculadora.evaluarSupuestoA_CuidadoFamiliarPrimerGrado(datos);
+    return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+  } catch (error) {
+    return { content: [{ type: "text", text: `Error evaluando Supuesto A: ${error instanceof Error ? error.message : 'Error desconocido'}` }] };
+  }
+});
+
+server.tool("evaluar_supuesto_b", "Evalúa el Supuesto B: Cuidado del tercer hijo o sucesivos", {
+  numeroHijos: z.any().describe("Número total de hijos"),
+  edadesHijos: z.any().describe("Edades de todos los hijos (array)"),
+  incluyeRecienNacido: z.any().describe("¿Incluye recién nacido?")
+}, async (params) => {
+  try {
+    const datos = {
+      numeroHijos: parseNumber(params.numeroHijos),
+      edadesHijos: parseArray(params.edadesHijos, parseNumber)?.filter(n => n !== undefined),
+      incluyeRecienNacido: parseBoolean(params.incluyeRecienNacido),
+    };
+    const resultado = calculadora.evaluarSupuestoB_TercerHijo(datos);
+    return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+  } catch (error) {
+    return { content: [{ type: "text", text: `Error evaluando Supuesto B: ${error instanceof Error ? error.message : 'Error desconocido'}` }] };
+  }
+});
+
+server.tool("evaluar_supuesto_e", "Evalúa el Supuesto E: Familia monoparental", {
+  esMonoparental: z.any().describe("¿Es familia monoparental acreditada?"),
+  esSituacionMonoparentalidad: z.any().describe("¿Situación de monoparentalidad?"),
+  numeroHijos: z.any().describe("Número total de hijos"),
+  edadesHijos: z.any().describe("Edades de los hijos"),
+  tieneDiscapacidad: z.any().describe("Porcentajes de discapacidad por hijo"),
+  tieneDependencia: z.any().describe("Dependencia reconocida por hijo")
+}, async (params) => {
+  try {
+    const datos = {
+      esMonoparental: parseBoolean(params.esMonoparental),
+      esSituacionMonoparentalidad: parseBoolean(params.esSituacionMonoparentalidad),
+      numeroHijos: parseNumber(params.numeroHijos),
+      edadesHijos: parseArray(params.edadesHijos, parseNumber)?.filter(n => n !== undefined),
+      tieneDiscapacidad: parseArray(params.tieneDiscapacidad, parseNumber)?.filter(n => n !== undefined) || [],
+      tieneDependencia: parseArray(params.tieneDependencia, parseBoolean)?.filter(b => b !== undefined) || [],
+    };
+    const resultado = calculadora.evaluarSupuestoE_FamiliaMonoparental(datos);
+    return { content: [{ type: "text", text: JSON.stringify(resultado, null, 2) }] };
+  } catch (error) {
+    return { content: [{ type: "text", text: `Error evaluando Supuesto E: ${error instanceof Error ? error.message : 'Error desconocido'}` }] };
+  }
+});
+
+// Setup
 process.on('uncaughtException', (error) => {
   console.error('UNCAUGHT EXCEPTION:', error);
   process.exit(1);
