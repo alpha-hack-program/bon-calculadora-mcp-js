@@ -13,9 +13,15 @@ WORKDIR /opt/app-root/src
 
 USER root
 
-RUN chown -R 1001:0 /opt/app-root/src
+# Crear y configurar directorios con permisos correctos
+RUN mkdir -p /opt/app-root/src/.npm && \
+    chown -R 1001:0 /opt/app-root/src && \
+    chmod -R g+w /opt/app-root/src
 
 USER 1001
+
+# Configurar npm para usar un cache específico
+ENV npm_config_cache=/opt/app-root/src/.npm
 
 # Copy package files and source code
 COPY --chown=1001:0 package*.json ./
@@ -63,6 +69,9 @@ WORKDIR /opt/app-root/src
 
 # Switch to non-root user for security
 USER 1001
+
+# Configurar npm para usar cache temporal en producción
+ENV npm_config_cache=/tmp/.npm
 
 # Set production environment
 ENV NODE_ENV=production

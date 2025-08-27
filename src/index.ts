@@ -7,7 +7,7 @@ import { CalculadoraExcedenciaNavarra2025 } from "./calculadora.js";
 
 const server = new McpServer({
   name: "bon-calculadora",
-  version: "1.0.0",
+  version: "1.0.2",
   capabilities: {
     resources: {},
     tools: {},
